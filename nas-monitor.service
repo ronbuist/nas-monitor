@@ -1,0 +1,16 @@
+[Unit]
+Description=NAS MQTT Monitor
+After=network.target
+
+[Service]
+Type=simple
+User=homeassistant
+WorkingDirectory=/home/pi/nas-monitor
+ExecStart=/usr/bin/python3 /home/pi/nas-monitor/nas_monitor.py --continuous
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
