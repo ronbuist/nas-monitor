@@ -1,0 +1,49 @@
+# NAS MQTT Monitor Configuration
+
+# NAS connection settings
+nas:
+  hostname: "mycloudex2ultra.local"
+  username: "sshd"
+  device_name: "WD MyCloud Ex2 Ultra"  # Name shown in Home Assistant
+  internal_disk: "HD_a2"
+  usb_disk: "USB1_c2"
+
+# SSH connection settings  
+ssh:
+  timeout: 30                    # SSH command timeout in seconds
+  connect_timeout: 10            # SSH connection timeout in seconds
+  max_retries: 3                 # Number of retry attempts
+  retry_delay: 5                 # Delay between retries in seconds
+
+# MQTT broker settings
+mqtt:
+  host: "localhost"              # MQTT broker IP/hostname
+  port: 1883                     # MQTT broker port (1883 for non-TLS, 8883 for TLS)
+  username: "username"           # MQTT username
+  password: "password"           # MQTT password
+  client_id: "nas_monitor"       # MQTT client ID
+  keepalive: 60                  # MQTT keepalive interval
+
+  # MQTT topics
+  base_topic: "wdmycloudex2ultra/sensor/nas"    # Base topic for all sensors
+  discovery_prefix: "homeassistant"             # Home Assistant discovery prefix
+
+  # TLS/SSL settings (optional)
+  tls:
+    enabled: false              # Enable TLS/SSL
+    ca_certs: null              # Path to CA certificates file
+    certfile: null              # Path to client certificate file  
+    keyfile: null               # Path to client private key file
+    cert_reqs: "required"       # Certificate requirements: "required" or "none"
+    version: "TLSv1_2"          # TLS version: "TLSv1_1", "TLSv1_2", "TLSv1_3"
+
+# Monitoring settings
+monitoring:
+  poll_interval: 60             # Data collection interval in seconds (1 minute)
+
+# Logging settings
+logging:
+  level: "ERROR"                  # Log level: DEBUG, INFO, WARNING, ERROR
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: null                     # Optional log file path (null for console only)
+  # file: "/var/log/nas_monitor.log"  # Uncomment to log to file
