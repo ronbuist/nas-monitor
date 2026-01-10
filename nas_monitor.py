@@ -324,6 +324,75 @@ class NASMonitor:
 
         return ups_data
 
+    def _parse_raid_status(self, mdstat_output: str) -> Dict[str, Any]:
+        """Parse RAID status from /proc/mdstat output."""
+        raid_data = {}
+        
+        try:
+            lines = mdstat_output.split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                
+                # Look for md1 array
+                if line.startswith('md1 :'):
+                    # Parse the status line: "md1 : active raid1 sdb2[1] sda2[0]"
+                    parts = line.split()
+                    raid_data['array'] = parts[0]  # md1
+                    raid_data['state'] = parts[2] if len(parts) > 2 else 'unknown'  # active/inactive
+                    raid_data['level'] = parts[3] if len(parts) > 3 else 'unknown'  # raid1
+                    
+                    # Move to next line for detailed status
+                    i += 1
+                    if i < len(lines):
+                        detail_line = lines[i].strip()
+                        # Look for [UU] or [U_] pattern indicating drive status
+                        status_match = re.search(r'\[([U_]+)\]', detail_line)
+                        if status_match:
+                            status_str = status_match.group(1)
+                            raid_data['drives_status'] = status_str
+                            
+                            # Count healthy drives (U) vs failed drives (_)
+                            healthy_drives = status_str.count('U')
+                            total_drives = len(status_str)
+                            raid_data['healthy_drives'] = healthy_drives
+                            raid_data['total_drives'] = total_drives
+                            
+                            # Determine overall health
+                            if healthy_drives == total_drives:
+                                raid_data['health'] = 'healthy'
+                            elif healthy_drives > 0:
+                                raid_data['health'] = 'degraded'
+                            else:
+                                raid_data['health'] = 'failed'
+                        else:
+                            raid_data['health'] = 'unknown'
+                            
+                        # Check if rebuilding/resyncing
+                        if 'recovery' in detail_line or 'resync' in detail_line:
+                            raid_data['health'] = 'rebuilding'
+                            # Try to extract percentage
+                            percent_match = re.search(r'(\d+\.\d+)%', detail_line)
+                            if percent_match:
+                                raid_data['rebuild_progress'] = float(percent_match.group(1))
+                    
+                    break  # Found md1, no need to continue
+                i += 1
+                
+        except Exception as e:
+            self.logger.error(f"Error parsing RAID status: {e}")
+        
+        # Set defaults if not found
+        if not raid_data:
+            raid_data = {
+                'health': 'unknown',
+                'state': 'unknown',
+                'level': 'unknown',
+                'drives_status': 'unknown'
+            }
+        
+        return raid_data
+
     def _check_firmware_update(self) -> Dict[str, str]:
         """Check latest firmware online and current version via SSH."""
         result = {"current": "unknown", "latest": "unknown", "status": "error"}
@@ -447,6 +516,14 @@ class NASMonitor:
             # Fan
             'fanrpm': {'name': 'NAS Fan RPM', 'unit': 'rpm', 'state_class': 'measurement'},
 
+            # RAID Status
+            'raid_health': {'name': 'NAS RAID Health', 'icon': 'mdi:harddisk'},
+            'raid_state': {'name': 'NAS RAID State', 'icon': 'mdi:state-machine'},
+            'raid_level': {'name': 'NAS RAID Level', 'icon': 'mdi:database'},
+            'raid_drives_status': {'name': 'NAS RAID Drives Status', 'icon': 'mdi:harddisk-plus'},
+            'raid_healthy_drives': {'name': 'NAS RAID Healthy Drives', 'state_class': 'measurement', 'icon': 'mdi:check-circle'},
+            'raid_total_drives': {'name': 'NAS RAID Total Drives', 'state_class': 'measurement', 'icon': 'mdi:harddisk-plus'},
+
             # Update status
             'updatestatus': {'name': 'NAS Update Status'},
             'current_firmware': {'name': 'NAS Current Firmware'},
@@ -480,6 +557,8 @@ class NASMonitor:
                 config_payload['device_class'] = sensor_config['device_class']
             if 'state_class' in sensor_config:
                 config_payload['state_class'] = sensor_config['state_class']
+            if 'icon' in sensor_config:
+                config_payload['icon'] = sensor_config['icon']
 
             self._publish_mqtt(discovery_topic, json.dumps(config_payload))
 
@@ -553,6 +632,24 @@ class NASMonitor:
                         self._publish_mqtt(f"{base_topic}/fanrpm", fan_rpm)
                 except:
                     pass
+
+            # Collect RAID status
+            self.logger.debug("Collecting RAID status...")
+            raid_output = self._execute_ssh_command("cat /proc/mdstat")
+            if raid_output:
+                raid_data = self._parse_raid_status(raid_output)
+                # Publish all RAID data
+                self._publish_mqtt(f"{base_topic}/raid_health", raid_data.get('health', 'unknown'))
+                self._publish_mqtt(f"{base_topic}/raid_state", raid_data.get('state', 'unknown'))
+                self._publish_mqtt(f"{base_topic}/raid_level", raid_data.get('level', 'unknown'))
+                self._publish_mqtt(f"{base_topic}/raid_drives_status", raid_data.get('drives_status', 'unknown'))
+                
+                if 'healthy_drives' in raid_data:
+                    self._publish_mqtt(f"{base_topic}/raid_healthy_drives", str(raid_data['healthy_drives']))
+                if 'total_drives' in raid_data:
+                    self._publish_mqtt(f"{base_topic}/raid_total_drives", str(raid_data['total_drives']))
+                if 'rebuild_progress' in raid_data:
+                    self._publish_mqtt(f"{base_topic}/raid_rebuild_progress", str(raid_data['rebuild_progress']))
 
             # Collect update status
             self.logger.debug("Collecting update status...")
@@ -750,3 +847,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
